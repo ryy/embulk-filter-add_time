@@ -1,3 +1,19 @@
+/*
+ * Copyright 2016 Treasure Data
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.embulk.filter.add_time.converter;
 
 import org.embulk.filter.add_time.AddTimeFilterPlugin.FromColumnConfig;
@@ -5,28 +21,32 @@ import org.embulk.filter.add_time.AddTimeFilterPlugin.ToColumnConfig;
 import org.embulk.filter.add_time.AddTimeFilterPlugin.UnixTimestampUnit;
 import org.embulk.spi.Column;
 import org.embulk.spi.PageBuilder;
-import org.embulk.spi.time.Timestamp;
-import org.embulk.spi.time.TimestampParseException;
-import org.embulk.spi.time.TimestampParser;
+import org.embulk.util.timestamp.TimestampFormatter;
 import org.msgpack.core.MessagePackException;
 import org.msgpack.value.Value;
-
+import org.msgpack.value.ValueFactory;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
-
-import static org.msgpack.value.ValueFactory.newString;
 
 public class JsonValueCastConverter
         extends ValueCastConverter
 {
     private final Value jsonKey;
-    private final TimestampParser fromTimestampParser; // for string value
+    private final TimestampFormatter fromTimestampFormatterForParsing; // for string value
     private final UnixTimestampUnit fromUnixTimestampUnit; // for long value
 
     public JsonValueCastConverter(FromColumnConfig fromColumnConfig, ToColumnConfig toColumnConfig)
     {
         super(toColumnConfig);
-        this.jsonKey = newString(fromColumnConfig.getJsonKey().get());
-        this.fromTimestampParser = new TimestampParser(fromColumnConfig, fromColumnConfig);
+        this.jsonKey = ValueFactory.newString(fromColumnConfig.getJsonKey().get());
+
+        final String pattern = fromColumnConfig.getFormat().orElse(fromColumnConfig.getDefaultTimestampFormat());
+        this.fromTimestampFormatterForParsing = TimestampFormatter.builder(pattern, true)
+                        .setDefaultZoneFromString(fromColumnConfig.getTimeZoneId().orElse(fromColumnConfig.getDefaultTimeZoneId()))
+                        .setDefaultDateFromString(fromColumnConfig.getDate().orElse(fromColumnConfig.getDefaultDate()))
+                        .build();
+
         this.fromUnixTimestampUnit = UnixTimestampUnit.of(fromColumnConfig.getUnixTimestampUnit());
     }
 
@@ -45,10 +65,10 @@ public class JsonValueCastConverter
 
             Value v = map.get(jsonKey);
             if (v.isStringValue()) {
-                columnVisitor.setValue(stringToTimestamp(v));
+                columnVisitor.setValue(stringToInstant(v));
             }
             else if (v.isIntegerValue()) {
-                columnVisitor.setValue(longToTimestamp(v));
+                columnVisitor.setValue(longToInstant(v));
             }
             else {
                 throw new InvalidCastException(String.format(
@@ -58,20 +78,20 @@ public class JsonValueCastConverter
             columnVisitor.setPageBuilder(pageBuilder);
             column.visit(columnVisitor);
         }
-        catch (InvalidCastException | TimestampParseException | MessagePackException e) {
+        catch (InvalidCastException | DateTimeParseException | MessagePackException e) {
             log.warn(String.format("Cannot convert (%s): %s", e.getMessage(), value.toJson()));
             pageBuilder.setNull(column);
         }
     }
 
-    private Timestamp stringToTimestamp(Value value)
+    private Instant stringToInstant(Value value)
     {
-        return fromTimestampParser.parse(value.asStringValue().toString());
+        return fromTimestampFormatterForParsing.parse(value.asStringValue().toString());
     }
 
-    private Timestamp longToTimestamp(Value value)
+    private Instant longToInstant(Value value)
     {
-        return fromUnixTimestampUnit.toTimestamp(value.asIntegerValue().toLong());
+        return fromUnixTimestampUnit.toInstant(value.asIntegerValue().toLong());
     }
 
     static class InvalidCastException

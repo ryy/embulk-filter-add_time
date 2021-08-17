@@ -1,13 +1,28 @@
+/*
+ * Copyright 2016 Treasure Data
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.embulk.filter.add_time;
 
-import com.google.common.base.Optional;
-import org.embulk.config.Config;
-import org.embulk.config.ConfigDefault;
+import java.time.Instant;
+import java.util.Optional;
 import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigSource;
-import org.embulk.config.Task;
 import org.embulk.config.TaskSource;
 import org.embulk.filter.add_time.converter.SchemaConverter;
+import org.embulk.spi.BufferAllocator;
 import org.embulk.spi.Exec;
 import org.embulk.spi.FilterPlugin;
 import org.embulk.spi.Page;
@@ -15,8 +30,14 @@ import org.embulk.spi.PageBuilder;
 import org.embulk.spi.PageOutput;
 import org.embulk.spi.PageReader;
 import org.embulk.spi.Schema;
-import org.embulk.spi.time.Timestamp;
+import org.embulk.util.config.Config;
+import org.embulk.util.config.ConfigDefault;
+import org.embulk.util.config.ConfigMapper;
+import org.embulk.util.config.ConfigMapperFactory;
+import org.embulk.util.config.Task;
+import org.embulk.util.config.TaskMapper;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class AddTimeFilterPlugin
         implements FilterPlugin
@@ -52,7 +73,7 @@ public class AddTimeFilterPlugin
     }
 
     public interface FromColumnConfig
-            extends Task, org.embulk.spi.time.TimestampParser.Task, org.embulk.spi.time.TimestampParser.TimestampColumnOption
+            extends Task
     {
         @Config("name")
         String getName();
@@ -61,10 +82,12 @@ public class AddTimeFilterPlugin
         @ConfigDefault("\"sec\"")
         String getUnixTimestampUnit();
 
+        // Duplicated with org.embulk.spi.time.TimestampParser.TimestampColumnOption below
         @Config("timestamp_format")
         @ConfigDefault("\"%Y-%m-%d %H:%M:%S %z\"") // override default value
         Optional<String> getFormat();
 
+        // Duplicated with org.embulk.spi.time.TimestampParser.Task below
         @Config("default_timestamp_format")
         @ConfigDefault("\"%Y-%m-%d %H:%M:%S %z\"") // override default value
         String getDefaultTimestampFormat();
@@ -72,10 +95,49 @@ public class AddTimeFilterPlugin
         @Config("json_key")
         @ConfigDefault("null")
         Optional<String> getJsonKey();
+
+        // From org.embulk.spi.time.TimestampParser.Task
+        @Config("default_timezone")
+        @ConfigDefault("\"UTC\"")
+        String getDefaultTimeZoneId();
+
+        // "String getDefaultTimestampFormat()" existed in org.embulk.spi.time.TimestampParser.Task.
+        //
+        // But, it is duplicated with an existing method in FromColumnConfig with the same signature and the same @Config.
+        // It is commented out, then.
+        //
+        // @Config("default_timestamp_format")
+        // @ConfigDefault("\"%Y-%m-%d %H:%M:%S.%N %z\"")
+        // String getDefaultTimestampFormat();
+
+        // From org.embulk.spi.time.TimestampParser.Task
+        @Config("default_date")
+        @ConfigDefault("\"1970-01-01\"")
+        String getDefaultDate();
+
+        // From org.embulk.spi.time.TimestampParser.TimestampColumnOption
+        @Config("timezone")
+        @ConfigDefault("null")
+        Optional<String> getTimeZoneId();
+
+        // "Optional<String> getFormat()" existed in org.embulk.spi.time.TimestampParser.TimestampColumnOption.
+        // But, it is duplicated with an existing method in FromColumnConfig with a different signature and a different @Config.
+        //
+        // A method declared directly in the interface has been prioritized.
+        // It is commented out, then.
+        //
+        // @Config("format")
+        // @ConfigDefault("null")
+        // Optional<String> getFormat();
+
+        // From org.embulk.spi.time.TimestampParser.TimestampColumnOption
+        @Config("date")
+        @ConfigDefault("null")
+        Optional<String> getDate();
     }
 
     public interface FromValueConfig
-            extends Task, org.embulk.spi.time.TimestampParser.Task, org.embulk.spi.time.TimestampParser.TimestampColumnOption
+            extends Task
     {
         @Config("mode")
         @ConfigDefault("\"fixed_time\"")
@@ -97,13 +159,54 @@ public class AddTimeFilterPlugin
         @ConfigDefault("\"sec\"")
         String getUnixTimestampUnit();
 
+        // Duplicated with org.embulk.spi.time.TimestampParser.TimestampColumnOption below
         @Config("timestamp_format")
         @ConfigDefault("\"%Y-%m-%d %H:%M:%S %z\"") // override default value
         Optional<String> getFormat();
 
+        // Duplicated with org.embulk.spi.time.TimestampParser.Task below
         @Config("default_timestamp_format")
         @ConfigDefault("\"%Y-%m-%d %H:%M:%S %z\"") // override default value
         String getDefaultTimestampFormat();
+
+        // From org.embulk.spi.time.TimestampParser.Task
+        @Config("default_timezone")
+        @ConfigDefault("\"UTC\"")
+        String getDefaultTimeZoneId();
+
+        // "String getDefaultTimestampFormat()" existed in org.embulk.spi.time.TimestampParser.Task.
+        //
+        // But, it is duplicated with an existing method in FromColumnConfig with the same signature and the same @Config.
+        // It is commented out, then.
+        //
+        // @Config("default_timestamp_format")
+        // @ConfigDefault("\"%Y-%m-%d %H:%M:%S.%N %z\"")
+        // String getDefaultTimestampFormat();
+
+        // From org.embulk.spi.time.TimestampParser.Task
+        @Config("default_date")
+        @ConfigDefault("\"1970-01-01\"")
+        String getDefaultDate();
+
+        // From org.embulk.spi.time.TimestampParser.TimestampColumnOption
+        @Config("timezone")
+        @ConfigDefault("null")
+        Optional<String> getTimeZoneId();
+
+        // "Optional<String> getFormat()" existed in org.embulk.spi.time.TimestampParser.TimestampColumnOption.
+        // But, it is duplicated with an existing method in FromColumnConfig with a different signature and a different @Config.
+        //
+        // A method declared directly in the interface has been prioritized.
+        // It is commented out, then.
+        //
+        // @Config("format")
+        // @ConfigDefault("null")
+        // Optional<String> getFormat();
+
+        // From org.embulk.spi.time.TimestampParser.TimestampColumnOption
+        @Config("date")
+        @ConfigDefault("null")
+        Optional<String> getDate();
     }
 
     public enum UnixTimestampUnit
@@ -122,14 +225,14 @@ public class AddTimeFilterPlugin
             this.nanoUnit = nanoUnit;
         }
 
-        public long toLong(Timestamp t)
+        public long toLong(final Instant t)
         {
             return t.getEpochSecond() * secondUnit + t.getNano() / nanoUnit;
         }
 
-        public Timestamp toTimestamp(long t)
+        public Instant toInstant(final long t)
         {
-            return Timestamp.ofEpochSecond(t / secondUnit, (int) (t % secondUnit * nanoUnit));
+            return Instant.ofEpochSecond(t / secondUnit, (int) (t % secondUnit * nanoUnit));
         }
 
         public static UnixTimestampUnit of(String s)
@@ -146,18 +249,12 @@ public class AddTimeFilterPlugin
         }
     }
 
-    private final Logger log;
-
-    public AddTimeFilterPlugin()
-    {
-        this.log = Exec.getLogger(getClass());
-    }
-
+    @SuppressWarnings("deprecation")  // For use of Task#dump()
     @Override
     public void transaction(ConfigSource config, Schema inputSchema,
             FilterPlugin.Control control)
     {
-        PluginTask task = config.loadConfig(PluginTask.class);
+        final PluginTask task = CONFIG_MAPPER.map(config, PluginTask.class);
         control.run(task.dump(), new SchemaConverter(log, task, inputSchema).toOutputSchema());
     }
 
@@ -165,7 +262,7 @@ public class AddTimeFilterPlugin
     public PageOutput open(TaskSource taskSource, Schema inputSchema,
             Schema outputSchema, PageOutput output)
     {
-        PluginTask task = taskSource.loadTask(PluginTask.class);
+        final PluginTask task = TASK_MAPPER.map(taskSource, PluginTask.class);
         return new PageConverter(log, inputSchema, outputSchema, output, new SchemaConverter(log, task, inputSchema));
     }
 
@@ -181,8 +278,9 @@ public class AddTimeFilterPlugin
         {
             this.log = log;
             this.schemaConverter = schemaConverter;
-            this.pageReader = new PageReader(inputSchema);
-            this.pageBuilder = new PageBuilder(Exec.getBufferAllocator(), outputSchema, output);
+
+            this.pageReader = getPageReader(inputSchema);
+            this.pageBuilder = getPageBuilder(Exec.getBufferAllocator(), outputSchema, output);
         }
 
         @Override
@@ -208,4 +306,48 @@ public class AddTimeFilterPlugin
         }
     }
 
+    @SuppressWarnings("deprecation")
+    private static PageBuilder getPageBuilder(final BufferAllocator bufferAllocator, final Schema schema, final PageOutput output) {
+        if (HAS_EXEC_GET_PAGE_BUILDER) {
+            return Exec.getPageBuilder(bufferAllocator, schema, output);
+        } else {
+            return new PageBuilder(bufferAllocator, schema, output);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static PageReader getPageReader(final Schema schema) {
+        if (HAS_EXEC_GET_PAGE_READER) {
+            return Exec.getPageReader(schema);
+        } else {
+            return new PageReader(schema);
+        }
+    }
+
+    private static boolean hasExecGetPageReader() {
+        try {
+            Exec.class.getMethod("getPageReader", Schema.class);
+        } catch (final NoSuchMethodException ex) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean hasExecGetPageBuilder() {
+        try {
+            Exec.class.getMethod("getPageBuilder", BufferAllocator.class, Schema.class, PageOutput.class);
+        } catch (final NoSuchMethodException ex) {
+            return false;
+        }
+        return true;
+    }
+
+    private static final boolean HAS_EXEC_GET_PAGE_READER = hasExecGetPageReader();
+    private static final boolean HAS_EXEC_GET_PAGE_BUILDER = hasExecGetPageBuilder();
+
+    private static final Logger log = LoggerFactory.getLogger(AddTimeFilterPlugin.class);
+
+    static final ConfigMapperFactory CONFIG_MAPPER_FACTORY = ConfigMapperFactory.builder().addDefaultModules().build();
+    static final ConfigMapper CONFIG_MAPPER = CONFIG_MAPPER_FACTORY.createConfigMapper();
+    static final TaskMapper TASK_MAPPER = CONFIG_MAPPER_FACTORY.createTaskMapper();
 }
